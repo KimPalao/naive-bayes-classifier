@@ -4,7 +4,18 @@
      * @author Varun Kumar <varunon9@gmail.com>
      */
     
-    require_once('Category.php');
+	require_once('Category.php');
+	
+	function object_array_contains($arr, $property, $item) {
+		return count(
+			array_filter(
+				$arr, 
+				function($arr_item) use ($item) { 
+					return $arr_item[$property] == $item; 
+				}
+			)
+		);
+	}
 
 
     class NaiveBayesClassifier {
@@ -13,8 +24,8 @@
     	}
 
         /**
-         * sentence is text(document) which will be classified as ham or spam
-         * @return category- ham/spam
+         * sentence is text(document) which will be categorized
+         * @return category
          */
     	public function classify($sentence) {
 
@@ -33,17 +44,15 @@
     	 * this function will save sentence aka text/document in trainingSet table with given category
     	 * It will also update count of words (or insert new) in wordFrequency table
     	 */
-    	public function train($sentence, $category) {
-    		$spam = Category::$SPAM;
-    		$ham = Category::$HAM;
+		public function train($sentence, $category) {
+			require 'db_connect.php';
+			$stmt = $pdo->prepare('SELECT * FROM categories WHERE NAME = :category');
+			$stmt->execute([':category' => $category]);
 
-    		if ($category == $spam || $category == $ham) {
-            
-	            //connecting to database
-	    	    require 'db_connect.php';
-
-	    	    // inserting sentence into trainingSet with given category
-	    	    $sql = mysqli_query($conn, "INSERT into trainingSet (document, category) values('$sentence', '$category')");
+			if ($stmt->rowCount() > 0) {
+				$category_object = $stmt->fetch();
+				$stmt = $pdo->prepare('INSERT INTO trainingSet (document, category_id) VALUES (:sentence, :category_id)');
+				$stmt->execute([':sentence' => $sentence, ':category_id' => $category_object['ID']]);
 
 	    	    // extracting keywords
 	    	    $keywordsArray = $this -> tokenize($sentence);
@@ -51,22 +60,24 @@
 	    	    // updating wordFrequency table
 	    	    foreach ($keywordsArray as $word) {
 
-	    	    	// if this word is already present with given category then update count else insert
-	    	    	$sql = mysqli_query($conn, "SELECT count(*) as total FROM wordFrequency WHERE word = '$word' and category= '$category' ");
-	    	    	$count = mysqli_fetch_assoc($sql);
+					$stmt = $pdo->prepare("SELECT COUNT(*) AS total FROM wordFrequency WHERE word = :word AND category_id = :category_id");
+					$stmt->execute([':word' => $word, ':category_id' => $category_object['ID']]);
+					// $count = mysqli_fetch_assoc($sql);
+					$count = $stmt->fetch();
 
 	    	    	if ($count['total'] == 0) {
-	    	    		$sql = mysqli_query($conn, "INSERT into wordFrequency (word, category, count) values('$word', '$category', 1)");
+						// $sql = mysqli_query($conn, "INSERT into wordFrequency (word, category, count) values('$word', '$category', 1)");
+						$stmt = $pdo->prepare('INSERT INTO wordFrequency (word, category_id, count) VALUES (:word, :category_id, 1)');
+						$stmt->execute([':word' => $word, ':category_id' => $category_object['ID']]);
 	    	    	} else {
-	    	    		$sql = mysqli_query($conn, "UPDATE wordFrequency set count = count + 1 where word = '$word'");
+	    	    		// $sql = mysqli_query($conn, "UPDATE wordFrequency set count = count + 1 where word = '$word'");
+						$stmt = $pdo->prepare('UPDATE wordFrequency SET count = count + 1 WHERE word = :word');
+						$stmt->execute([':word' => $word]);
 	    	    	}
 	    	    }
 
-	    	    //closing connection
-	    	    $conn -> close();
-
     		} else {
-    			throw new Exception('Unknown category. Valid categories are: $ham, $spam');
+    			throw new Exception('Unknown category');
     		}
     	}
 
@@ -75,8 +86,8 @@
     	 */
 
     	private function tokenize($sentence) {
-	        $stopWords = array('about','and','are','com','for','from','how',
-	            'that','the','this', 'was','what','when','where','who','will','with','und','the','www');
+	        $stopWords = array('about','and','are','com','for','from', 'hi', 'hello',
+	            'that','the','this', 'was','will','with','und','www');
 
 	    	//removing all the characters which ar not letters, numbers or space
 	    	$sentence = preg_replace("/[^a-zA-Z 0-9]+/", "", $sentence);
@@ -92,15 +103,11 @@
 	    	$token =  strtok($sentence, " ");
 	    	while ($token !== false) {
 
-	    		//excluding elements of length less than 3
-	    		if (!(strlen($token) <= 2)) {
-
-	    			//excluding elements which are present in stopWords array
-	                //http://www.w3schools.com/php/func_array_in_array.asp
-	    			if (!(in_array($token, $stopWords))) {
-	    				array_push($keywordsArray, $token);
-	    			}
-	    		}
+				//excluding elements which are present in stopWords array
+				//http://www.w3schools.com/php/func_array_in_array.asp
+				if (!(in_array($token, $stopWords))) {
+					array_push($keywordsArray, $token);
+				}
 		    	$token = strtok(" ");
 	    	}
 	    	return $keywordsArray;
@@ -125,63 +132,44 @@
     	 *   https://github.com/ttezel/bayes/blob/master/lib/naive_bayes.js
     	*/
     	private function decide ($keywordsArray) {
-    		$spam = Category::$SPAM;
-    		$ham = Category::$HAM;
-
-            // by default assuming category to be ham
-    		$category = $ham;
+    		$category = 'ham';
 
     		// making connection to database
     	    require 'db_connect.php';
 
-    		$sql = mysqli_query($conn, "SELECT count(*) as total FROM trainingSet WHERE  category = '$spam' ");
-    		$spamCount = mysqli_fetch_assoc($sql);
-    		$spamCount = $spamCount['total'];
+			$stmt = $pdo->prepare('SELECT categories.name, categories.ID, COUNT(*) as total FROM trainingSet left join categories on (trainingset.category_id = categories.ID) GROUP BY categories.ID');
+			$stmt->execute();
+			$counts = $stmt->fetchAll();
+			$totalCount = 0;
+			foreach ($counts as $count) {
+				$totalCount += $count['total'];
+			}
+			
+			$stmt = $pdo->prepare('SELECT COUNT(*) AS total FROM wordFrequency');
+			$stmt->execute();
+			$distinctWords = $stmt->fetch()['total'];
 
-    		$sql = mysqli_query($conn, "SELECT count(*) as total FROM trainingSet WHERE  category = '$ham' ");
-    		$hamCount = mysqli_fetch_assoc($sql);
-    		$hamCount = $hamCount['total'];
-
-    		$sql = mysqli_query($conn, "SELECT count(*) as total FROM trainingSet ");
-    		$totalCount = mysqli_fetch_assoc($sql);
-    		$totalCount = $totalCount['total'];
-
-    		//p(spam)
-    		$pSpam = $spamCount / $totalCount; // (no of documents classified as spam / total no of documents)
-
-    		//p(ham)
-    		$pHam = $hamCount / $totalCount; // (no of documents classified as ham / total no of documents)
-    		
-    		//echo $pSpam." ".$pHam;
-            
-            // no of distinct words (used for laplace smoothing)
-            $sql = mysqli_query($conn, "SELECT count(*) as total FROM wordFrequency ");
-    		$distinctWords = mysqli_fetch_assoc($sql);
-    		$distinctWords = $distinctWords['total'];
-
-    		$bodyTextIsSpam = log($pSpam);
-    		foreach ($keywordsArray as $word) {
-    			$sql = mysqli_query($conn, "SELECT count as total FROM wordFrequency where word = '$word' and category = '$spam' ");
-    			$wordCount = mysqli_fetch_assoc($sql);
-    			$wordCount = $wordCount['total'];
-    			$bodyTextIsSpam += log(($wordCount + 1) / ($spamCount + $distinctWords));
-    		}
-
-    		$bodyTextIsHam = log($pHam);
-    		foreach ($keywordsArray as $word) {
-    			$sql = mysqli_query($conn, "SELECT count as total FROM wordFrequency where word = '$word' and category = '$ham' ");
-    			$wordCount = mysqli_fetch_assoc($sql);
-    			$wordCount = $wordCount['total'];
-    			$bodyTextIsHam += log(($wordCount + 1) / ($hamCount + $distinctWords));
-    		}
-
-    		if ($bodyTextIsHam >= $bodyTextIsSpam) {
-    			$category = $ham;
-    		} else {
-    			$category = $spam;
-    		}
-
-    		$conn -> close();
+			$highestProbability = PHP_FLOAT_MIN;
+			foreach ($counts as $count) {
+				// $p = $count['total'] / $totalCount;
+				$p = 0;
+				// $probability = log($p);
+				$probability = $p;
+				foreach ($keywordsArray as $word) {
+					$stmt = $pdo->prepare('SELECT count AS total FROM wordFrequency WHERE word = :word AND category_id = :category_id');
+					$stmt->execute([':word' => $word, ':category_id' => $count['ID']]);
+					if ($stmt->rowCount() == 0) continue;
+					$wordCount = $stmt->fetch()['total'];
+					// $probability += log(($wordCount + 1) / ($count['total'] + $distinctWords));
+					$probability += ($wordCount + 1) / ($count['total'] + $distinctWords);
+					// echo '[' . $count['ID'] . ']' . $count['name'] . ': ' . $wordCount . ' + 1 / (' . $count['total'] . ' + ' . $distinctWords . ') = ' . $probability . '<br/>';
+				}
+				if ($probability >= $highestProbability) {
+					$highestProbability = $probability;
+					$category = $count['name'];
+				}
+				echo $count['name'] . ': ' . $probability . '<br/>';
+			}
 
     		return $category;
     	}

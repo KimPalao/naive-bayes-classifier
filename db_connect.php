@@ -4,15 +4,14 @@
     */
     $servername = "localhost";
     $username = "root";
-    $password = "password123";
+    $password = "";
     $dbname = "naiveBayes";
+    $charset = 'utf8mb4';
 
-    // Create connection
-    $conn = mysqli_connect($servername, $username, $password, $dbname);
-    mysqli_set_charset($conn, "utf8");
-    
-    // Check connection
-    if (mysqli_connect_errno()) {
-        echo "Failed to connect to MySQL: " . mysqli_connect_error();
-    }
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false
+    ];
+    $pdo = new PDO("mysql:host=$servername;dbname=$dbname;charset=$charset", $username, $password, $options);
 ?>
