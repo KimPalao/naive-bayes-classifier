@@ -168,7 +168,7 @@
 					$highestProbability = $probability;
 					$category = $count['name'];
 				}
-				echo $count['name'] . ': ' . $probability . '<br/>';
+				// echo $count['name'] . ': ' . $probability . '<br/>';
 			}
 
     		return $category;

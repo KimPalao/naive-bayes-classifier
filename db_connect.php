@@ -1,12 +1,13 @@
 <?php
+    require_once('config.php');
     /**
     * This file make connection to database using following parameters.
     */
-    $servername = "localhost";
-    $username = "root";
-    $password = "";
-    $dbname = "naiveBayes";
-    $charset = 'utf8mb4';
+    $servername = $_ENV['DB_SERVER'];
+    $username = $_ENV['DB_USER'];
+    $password = $_ENV['DB_PASS'];
+    $dbname = $_ENV['DB_NAME'];
+    $charset = $_ENV['DB_CHARSET'];
 
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
