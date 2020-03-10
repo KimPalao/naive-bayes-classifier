@@ -4,7 +4,6 @@
      * @author Varun Kumar <varunon9@gmail.com>
      */
     
-	require_once('Category.php');
 	
 	function object_array_contains($arr, $property, $item) {
 		return count(
@@ -17,10 +16,55 @@
 		);
 	}
 
+	/**
+	 * Use binary search to find a key of a value in an array.
+	 *
+	 * @param array $array
+	 *   The array to search for the value.
+	 * @param int $value
+	 *   A value to be searched.
+	 *
+	 * @return int|null
+	 *   Returns the key of the value in the array, or null if the value is not found.
+	 * 
+	 * @src https://www.hashbangcode.com/article/implementation-array-binary-search-php
+	 */
+	function binarySearch($array, $value) {
+		// Set the left pointer to 0.
+		$left = 0;
+		// Set the right pointer to the length of the array -1.
+		$right = count($array) - 1;
+	
+		while ($left <= $right) {
+		// Set the initial midpoint to the rounded down value of half the length of the array.
+		$midpoint = (int) floor(($left + $right) / 2);
+	
+		if ($array[$midpoint] < $value) {
+			// The midpoint value is less than the value.
+			$left = $midpoint + 1;
+		} elseif ($array[$midpoint] > $value) {
+			// The midpoint value is greater than the value.
+			$right = $midpoint - 1;
+		} else {
+			// This is the key we are looking for.
+			return $midpoint;
+		}
+		}
+		// The value was not found.
+		return NULL;
+	}
 
     class NaiveBayesClassifier {
 
+		public $stopWords = [];
+
     	public function __construct() {
+			require('db_connect.php');
+			$stmt = $pdo->prepare('SELECT word FROM stopwords ORDER BY word ASC');
+			$stmt->execute();
+			$this->stopWords = array_map(function($row) {
+				return $row['word'];
+			}, $stmt->fetchAll());
     	}
 
         /**
@@ -45,7 +89,7 @@
     	 * It will also update count of words (or insert new) in wordFrequency table
     	 */
 		public function train($sentence, $category) {
-			require 'db_connect.php';
+			require('db_connect.php');
 			$stmt = $pdo->prepare('SELECT * FROM categories WHERE NAME = :category');
 			$stmt->execute([':category' => $category]);
 
@@ -86,8 +130,6 @@
     	 */
 
     	private function tokenize($sentence) {
-	        $stopWords = array('about','and','are','com','for','from', 'hi', 'hello',
-	            'that','the','this', 'was','will','with','und','www');
 
 	    	//removing all the characters which ar not letters, numbers or space
 	    	$sentence = preg_replace("/[^a-zA-Z 0-9]+/", "", $sentence);
@@ -105,7 +147,7 @@
 
 				//excluding elements which are present in stopWords array
 				//http://www.w3schools.com/php/func_array_in_array.asp
-				if (!(in_array($token, $stopWords))) {
+				if (!binarySearch($this->stopWords, $token)) {
 					array_push($keywordsArray, $token);
 				}
 		    	$token = strtok(" ");
@@ -135,7 +177,7 @@
     		$category = 'ham';
 
     		// making connection to database
-    	    require 'db_connect.php';
+    	    require('db_connect.php');
 
 			$stmt = $pdo->prepare('SELECT categories.name, categories.ID, COUNT(*) as total FROM trainingSet left join categories on (trainingset.category_id = categories.ID) GROUP BY categories.ID');
 			$stmt->execute();
